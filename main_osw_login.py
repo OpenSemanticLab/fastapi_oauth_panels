@@ -16,7 +16,7 @@ from starlette.config import Config
 from starlette_authlib.middleware import AuthlibMiddleware as SessionMiddleware
 from starlette.responses import HTMLResponse, RedirectResponse
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from authlib.jose import JsonWebEncryption
+from authlib.jose import JsonWebEncryption, jwt
 
 from mwoauth import ConsumerToken, Handshaker, AccessToken
 
@@ -41,7 +41,10 @@ osw_server = os.environ.get('OSW_SERVER')
 
 key = os.environ.get('OAUTH_CLIENT_ID')
 secret = os.environ.get('OAUTH_CLIENT_SECRET')
-
+# 128 bit key to sign the JWT
+jwt_key = bytes.fromhex("74738ff5536759589aee98fffdcd1876")
+# 128 bit key to encrypt the JWT as JWE
+jwe_key = bytes.fromhex("74738ff5536759589aee98fffdcd1876")
 
 oauth.register(
     name='mediawiki',
@@ -60,26 +63,42 @@ handshaker = Handshaker(osw_server+"/w/index.php",
 
 templates = Jinja2Templates(directory="templates")
 
-def get_osw(request):
-    cm = CredentialManager()
+def get_jwe_from_json(json_payload) -> str:
+    
+    # create the JWT
+    jwt_header = {'alg': 'HS256'}
+    jwt_payload = json_payload
+    jwt_encoded = jwt.encode(jwt_header, jwt_payload, jwt_key)
 
-    #latest_exp = None
-    #access_token = None
-    #access_secret = None
-    #for key in request.session:
-    #    if (key.startswith("_state_mediawiki_")):
-    #        exp = request.session[key]['exp']
-    #        if latest_exp is None or latest_exp < exp:
-    #            latest_exp = exp
-    #            access_token = request.session[key]['request_token']['oauth_token']
-    #            access_secret = request.session[key]['request_token']['exp']
+    # create the JWE
+    jwe = JsonWebEncryption()
+    jwe_header = {'alg': 'A128KW', 'enc': 'A128CBC-HS256'}
+    jwe_payload = jwt_encoded
+    jwe_encrypted = jwe.serialize_compact(jwe_header, jwe_payload, jwe_key)
+
+    return jwe_encrypted.decode('utf-8')
+
+def get_json_from_jwe(jwe_encrypted: str) -> dict:
+    jwe_encrypted = jwe_encrypted.encode('utf-8')
+    # decrypt the JWE
+    jwe = JsonWebEncryption()
+    data = jwe.deserialize_compact(jwe_encrypted, jwe_key)
+    jwe_header = data['header']
+    payload = data['payload']
+
+    # decode the JWT
+    claims = jwt.decode(payload, jwt_key)
+    return claims
+
+def get_osw(osw_token) -> OSW:
+    cm = CredentialManager()
 
     cm.add_credential(cred=CredentialManager.OAuth1Credential(
         iri="wiki-dev.open-semantic-lab.org",
         consumer_token= key,
         consumer_secret= secret,
-        access_token= request.session['oauth_token'],
-        access_secret= request.session['oauth_token_secret']
+        access_token= osw_token['oauth_token'],
+        access_secret= osw_token['oauth_token_secret']
     ))
     wtsite = WtSite(WtSite.WtSiteConfig(iri="wiki-dev.open-semantic-lab.org", cred_mngr=cm))
     osw = OSW(site=wtsite)
@@ -98,14 +117,15 @@ def get_osw(request):
 
 @app.get('/')
 async def homepage(request: Request):
-    user = request.session.get('user')
     pprint( request.session)
-    if user:
+    encrypted_token = request.session.get('osw_token')
+    if encrypted_token:
+        token = get_json_from_jwe(encrypted_token)
         print("USER GET")
-        osw = get_osw(request)
+        osw = get_osw(token)
         pn.state.cache['osw'] = osw
-        pn.state.cache['osw_user'] = user
-        data = json.dumps(user)
+        pn.state.cache['osw_user'] = token["username"]
+        data = json.dumps(token["username"])
         script = server_document('http://' + internal_host + ':' + str(internal_port) + '/app')
         return templates.TemplateResponse("base.html", {"request": request, "script": script, "data": data})
 
@@ -126,24 +146,21 @@ async def login(request: Request):
 async def auth(request: Request):
     try:
         token = await oauth.mediawiki.authorize_access_token(request)
-        token["userinfo"] = handshaker.identify(AccessToken( token["oauth_token"], token["oauth_token_secret"]))
-        # todo: check if token has valid signature
+        userinfo = handshaker.identify(AccessToken( token["oauth_token"], token["oauth_token_secret"]))
+        token["username"] = userinfo['username']
     except OAuthError as error:
         pprint(error)
         return HTMLResponse(f'<h1>{error.error}</h1>')
-    #pprint(token)
+    pprint(token)
     #pprint( request.session)
 
     # OAuth2 / OICD
-    user = token.get('userinfo')
-    if user:
+    user = userinfo #token.get('userinfo')
+    if token:
         print("USER SET")
-        #request.session['user'] = dict(user)
-        request.session['user'] = user['username']
-        #request.session['token'] = dict(token)
-        # todo: encrypt sensitive information
-        request.session['oauth_token'] = token["oauth_token"]
-        request.session['oauth_token_secret'] = token["oauth_token_secret"]
+        # in general, large objects seem to fail to be stored in the session
+        # therefore, we store only token, secret and username (all encrypted)
+        request.session['osw_token'] = get_jwe_from_json(token)
         pprint( request.session)
 
     return RedirectResponse(url='/')
@@ -151,9 +168,7 @@ async def auth(request: Request):
 
 @app.get('/logout')
 async def logout(request: Request):
-    request.session.pop('user', None)
-    request.session.pop('oauth_token', None)
-    request.session.pop('oauth_token_secret', None)
+    request.session.pop('osw_token', None)
     return RedirectResponse(url='/')
 
 
