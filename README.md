@@ -21,12 +21,12 @@ create a client here (example): https://your.domain.com/wiki/Special:OAuthConsum
 
 powershell:
 ```powershell
-$env:OAUTH_CLIENT_ID = '...'; $env:OAUTH_CLIENT_SECRET = '...'; $env:OSW_SERVER = 'https://your.domain.com'; $env:APP_HOST = 'localhost'; $env:APP_PORT = '5454'; uvicorn main_osw_login:app --port 5454 --host 'localhost'
+$env:OAUTH_CLIENT_ID = '...'; $env:OAUTH_CLIENT_SECRET = '...'; $env:APP_SESSION_SECRET = '!secret';$env:APP_JWT_KEY = '74738ff5536759589aee98fffdcd1876'; $env:APP_JWE_KEY = '74738ff5536759589aee98fffdcd1877'; $env:OSW_SERVER = 'https://your.domain.com'; $env:APP_HOST = 'localhost'; $env:APP_PORT = '5454'; uvicorn main_osw_login:app --port 5454 --host 'localhost'
 ```
 
 bash:
 ```bash
-export OAUTH_CLIENT_ID = '...'; export OAUTH_CLIENT_SECRET = '...'; export OSW_SERVER = 'https://your.domain.com'; export APP_HOST = 'localhost'; export APP_PORT = '5454'; uvicorn main_osw_login:app --port 5454 --host 'localhost'
+export OAUTH_CLIENT_ID = '...'; export OAUTH_CLIENT_SECRET = '...'; export APP_SESSION_SECRET = '!secret'; export APP_JWT_KEY = '74738ff5536759589aee98fffdcd1876'; export APP_JWE_KEY = '74738ff5536759589aee98fffdcd1877'; export OSW_SERVER = 'https://your.domain.com'; export APP_HOST = 'localhost'; export APP_PORT = '5454'; uvicorn main_osw_login:app --port 5454 --host 'localhost'
 ```
 
 ## Further reading:
@@ -34,3 +34,5 @@ export OAUTH_CLIENT_ID = '...'; export OAUTH_CLIENT_SECRET = '...'; export OSW_S
 * https://panel.holoviz.org/how_to/integrations/FastAPI.html
 * https://github.com/authlib/demo-oauth-client/tree/master/fastapi-google-login
 * https://github.com/authlib/demo-oauth-client/blob/master/fastapi-twitter-login/app.py
+* https://docs.authlib.org/en/latest/jose/
+* https://github.com/lepture/authlib/blob/master/tests/jose/test_jwe.py

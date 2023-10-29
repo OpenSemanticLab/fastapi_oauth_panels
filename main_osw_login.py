@@ -29,7 +29,7 @@ from osw.core import OSW
 from osw.wtsite import WtSite
 
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="!secret")
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get('APP_SESSION_SECRET'))
 
 oauth = OAuth()
 
@@ -42,9 +42,9 @@ osw_server = os.environ.get('OSW_SERVER')
 key = os.environ.get('OAUTH_CLIENT_ID')
 secret = os.environ.get('OAUTH_CLIENT_SECRET')
 # 128 bit key to sign the JWT
-jwt_key = bytes.fromhex("74738ff5536759589aee98fffdcd1876")
+jwt_key = bytes.fromhex(os.environ.get('APP_JWT_KEY'))
 # 128 bit key to encrypt the JWT as JWE
-jwe_key = bytes.fromhex("74738ff5536759589aee98fffdcd1876")
+jwe_key = bytes.fromhex(os.environ.get('APP_JWE_KEY'))
 
 oauth.register(
     name='mediawiki',
